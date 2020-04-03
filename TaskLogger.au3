@@ -8,6 +8,7 @@
 #ce ----------------------------------------------------------------------------
 
 #include <Date.au3>
+#include <File.au3>
 
 ; делает плюс инкримент
 HotKeySet("!w", "Increment")
@@ -19,17 +20,18 @@ HotKeySet("!q", "Show")
 HotKeySet("!й", "Show")
 
 ; - очистить счетчик
-HotKeySet("!e", "Clear")
-HotKeySet("!у", "Clear")
+HotKeySet("!e", "OpenFileLog")
+HotKeySet("!у", "OpenFileLog")
 
 Global $AppName = "Инкрементатор"
 Global $Num = 0
 Global $StartedAt = _NowCalc()
-Global $Log = ""
+
 Global $Tasks[20] ; массив с задачами. Задачи начинаются с 1
 	For $i = 1 To UBound($Tasks) - 1
 		$Tasks[$i] = ""
 	Next
+TraySetIcon(@ScriptDir & "\ico.ico"); меняем иконку в трее
 
 Func Increment()
 	Local $msg = "Введите номер задачи или новую задачу [новая задача] или удалить задачу -[номер задачи]. Текущие задачи: "
@@ -88,6 +90,7 @@ Func TryDeleteTask($msgFromUser)
 	EndIf
 EndFunc
 
+
 Func TryAddTask($msgFromUser)
 	if(StringLeft($msgFromUser, 2) = "==") Then
 		; получаем задачу
@@ -112,11 +115,59 @@ EndFunc
 
 
 Func TryLogSwitchedTask($msgFromUser)
+	Local $oldLogs = DownloadLogs()
+
 	if(Int($msgFromUser) > 0 AND Int($msgFromUser) < UBound($Tasks) - 1) Then
-		$Log = $Log & @CRLF & _DateTimeFormat( _NowCalc(), 4) & " - " & $Tasks[Int($msgFromUser)]
+		Local $newLogs = $oldLogs & @CRLF & _DateTimeFormat( _NowCalc(), 4) & " - " & $Tasks[Int($msgFromUser)]
+
+		SaveLogsToFile($newLogs)
 	EndIf
 EndFunc
 
+Global $logsLabel = "-----------------------Логи-----------------------"
+Func SaveLogsToFile($logs)
+	Local $statistics = GetStatistics()
+
+	Local $text = $statistics
+	$text = $text & "--------------------Статистика--------------------"
+	$text = $text & @CRLF & @CRLF & @CRLF
+	$text = $text & @CRLF & $logsLabel
+	$text = $text & @CRLF & $logs
+
+	$filePath = GetActualLogFileName()
+	FileDelete ( $filePath )
+	$hFile = FileOpen($filePath, 2)
+	FileWrite($hFile, $text)
+	FileClose($hFile)
+EndFunc
+
+
+; Загрузить только логи без статистики из файла
+Func DownloadLogs()
+	if(FileExists (GetActualLogFileName())) Then
+		; узнаем с какой строки начинаются логи
+		Local filePath = GetActualLogFileName()
+		$logsStartLineNum = 0
+		$countLines = _FileCountLines(filePath) ; всего строк в файле
+		$hFile = FileOpen(filePath, 0)
+		For $i = 1 To $countLines
+			if(FileReadLine ( $hFile, $i) = $logsLabel) Then
+				$logsStartLineNum = $i + 1
+				ExitLoop
+			EndIf
+		Next
+
+		; считываем логи с нужной строки
+		Local $result = ""
+		For $i = $logsStartLineNum To $countLines
+			$result = $result & FileReadLine ( $hFile, $i)
+		Next
+
+		FileClose($hFile)
+	Else
+		Return ""
+	EndIf
+EndFunc
 
 Func Show()
 	Local $timeDiff_minute = _DateDiff('n',$StartedAt,_NowCalc())
@@ -125,25 +176,31 @@ Func Show()
 	$msg = $msg & @CRLF & "Разница во времени: " & ($timeDiff_minute-Mod($timeDiff_minute, 60))/60 & " ч. " & Mod($timeDiff_minute, 60) & " мин."
 	$msg = $msg & @CRLF & "Время старта: " & _DateTimeFormat($StartedAt, 0)
 
-	$msg = $msg & @CRLF & $Log
+	$msg = $msg & @CRLF & DownloadLogs()
 
 	MsgBox(0, $AppName, $msg)
 EndFunc
 
 
-Func Clear()
-	$answer = MsgBox(1, $AppName, "Вы уверены, что хотите очистить лог?")
-	if($answer = 1) Then
-		$Num = 0
-		$StartedAt = _NowCalc()
-		$Log = ""
+Func OpenFileLog()
+	$answer = MsgBox(1, $AppName, "Вы уверены, что хотите открыть файл логов?")
+	if($answer = True) Then
+		$resultOpen = FileOpen ( GetActualLogFileName() )
+
+		if($resultOpen = -1) Then
+			MsgBox(0, $AppName, "Файл с логами на сегодняшний день не найден.")
+		EndIf
 	EndIf
+EndFunc
+
+
+Func GetActualLogFileName()
+	Return @ScriptDir & "Logs\" & @YEAR & "." & @MON & "." & @MDAY & "_log.txt"
 EndFunc
 
 
 While 1
 	Sleep(30)
-
 WEnd
 
 
@@ -162,3 +219,16 @@ Func SerchText($text, $data1, $data2, $symbol = 1) ; Ищет совпадени
 	EndIf
 EndFunc   ;==>SerchText
 #Region Из библиотек
+
+
+
+
+
+
+
+
+Остановился на том что надо продебажить это говно и сделать правильное отображение статистики
+
+
+
+

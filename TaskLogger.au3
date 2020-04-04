@@ -118,7 +118,7 @@ Func TryLogSwitchedTask($msgFromUser)
 	Local $oldLogs = DownloadLogs()
 
 	if(Int($msgFromUser) > 0 AND Int($msgFromUser) < UBound($Tasks) - 1) Then
-		Local $newLogs = $oldLogs & @CRLF & _DateTimeFormat( _NowCalc(), 4) & " - " & $Tasks[Int($msgFromUser)]
+		Local $newLogs = $oldLogs & _DateTimeFormat( _NowCalc(), 4) & " - " & $Tasks[Int($msgFromUser)]
 
 		SaveLogsToFile($newLogs)
 	EndIf
@@ -128,13 +128,14 @@ Global $logsLabel = "-----------------------Логи-----------------------"
 Func SaveLogsToFile($logs)
 	Local $statistics = GetStatistics()
 
-	Local $text = $statistics
-	$text = $text & "--------------------Статистика--------------------"
+	Local $text = "--------------------Статистика--------------------"
+	$text = $text & @CRLF & $statistics
 	$text = $text & @CRLF & @CRLF & @CRLF
 	$text = $text & @CRLF & $logsLabel
 	$text = $text & @CRLF & $logs
 
 	$filePath = GetActualLogFileName()
+
 	FileDelete ( $filePath )
 	$hFile = FileOpen($filePath, 2)
 	FileWrite($hFile, $text)
@@ -142,14 +143,26 @@ Func SaveLogsToFile($logs)
 EndFunc
 
 
+; Сформировать текст статистики
+Func GetStatistics()
+	Local $timeDiff_minute = _DateDiff('n',$StartedAt,_NowCalc())
+
+	Local $text = "Текущий счет: " & $Num
+	$text = $text & @CRLF & "Разница во времени: " & ($timeDiff_minute-Mod($timeDiff_minute, 60))/60 & " ч. " & Mod($timeDiff_minute, 60) & " мин."
+	$text = $text & @CRLF & "Время старта: " & _DateTimeFormat($StartedAt, 0)
+
+	Return $text
+EndFunc
+
+
 ; Загрузить только логи без статистики из файла
 Func DownloadLogs()
 	if(FileExists (GetActualLogFileName())) Then
 		; узнаем с какой строки начинаются логи
-		Local filePath = GetActualLogFileName()
+		Local $filePath = GetActualLogFileName()
 		$logsStartLineNum = 0
-		$countLines = _FileCountLines(filePath) ; всего строк в файле
-		$hFile = FileOpen(filePath, 0)
+		$countLines = _FileCountLines($filePath) ; всего строк в файле
+		$hFile = FileOpen($filePath, 0)
 		For $i = 1 To $countLines
 			if(FileReadLine ( $hFile, $i) = $logsLabel) Then
 				$logsStartLineNum = $i + 1
@@ -160,23 +173,37 @@ Func DownloadLogs()
 		; считываем логи с нужной строки
 		Local $result = ""
 		For $i = $logsStartLineNum To $countLines
-			$result = $result & FileReadLine ( $hFile, $i)
+			$result = $result & FileReadLine ( $hFile, $i) & @CRLF
 		Next
 
 		FileClose($hFile)
+
+		Return $result
 	Else
 		Return ""
 	EndIf
 EndFunc
 
 Func Show()
-	Local $timeDiff_minute = _DateDiff('n',$StartedAt,_NowCalc())
+	Local $msg = GetStatistics()
 
-	Local $msg = "Текущий счет: " & $Num
-	$msg = $msg & @CRLF & "Разница во времени: " & ($timeDiff_minute-Mod($timeDiff_minute, 60))/60 & " ч. " & Mod($timeDiff_minute, 60) & " мин."
-	$msg = $msg & @CRLF & "Время старта: " & _DateTimeFormat($StartedAt, 0)
+	Local $logs = DownloadLogs()
+	; последние 10 записей
+	Local $logsArray =  StringSplit ( $logs, @CRLF , 2 ) ; строку из множество строк разделили на массив
+	Local $lastTenEntriesString = "" ; последние 10 записей слепленные в одну строку
+	Local $limitEntries = 10 ; ограничение по количеству отображаемых записей логов
+	Local $entriesCounter = 0 ; счетчик числа уже заполненных логов
+	for $i = UBound($logsArray) - 1 To 0 Step -1 ; перекидываем из массива с логами в строку с логами в обратном порядке, чтобы последние записи видеть
+		if($logsArray[$i] <> "" AND $logsArray[$i] <> " " AND $logsArray[$i] <> 0) Then
+			$lastTenEntriesString = $lastTenEntriesString & $logsArray[$i] & @CRLF
+			$entriesCounter = $entriesCounter + 1
+			If($entriesCounter >= $limitEntries) Then ; если пробито ограничение, по количеству записей для вывода на висуальное окно, то заканчиваем заполнять строку с логами
+				ExitLoop
+			EndIf
+		EndIf
+	Next
 
-	$msg = $msg & @CRLF & DownloadLogs()
+	$msg = $msg & @CRLF & $lastTenEntriesString
 
 	MsgBox(0, $AppName, $msg)
 EndFunc
@@ -185,9 +212,10 @@ EndFunc
 Func OpenFileLog()
 	$answer = MsgBox(1, $AppName, "Вы уверены, что хотите открыть файл логов?")
 	if($answer = True) Then
-		$resultOpen = FileOpen ( GetActualLogFileName() )
-
-		if($resultOpen = -1) Then
+		$filePath = GetActualLogFileName()
+		if(FileExists($filePath)) Then
+			$resultOpen = ShellExecute($filePath, "", "", "edit")
+		Else
 			MsgBox(0, $AppName, "Файл с логами на сегодняшний день не найден.")
 		EndIf
 	EndIf
@@ -195,7 +223,7 @@ EndFunc
 
 
 Func GetActualLogFileName()
-	Return @ScriptDir & "Logs\" & @YEAR & "." & @MON & "." & @MDAY & "_log.txt"
+	Return @ScriptDir & "\Logs\" & @YEAR & "." & @MON & "." & @MDAY & "_log.txt"
 EndFunc
 
 
@@ -219,16 +247,3 @@ Func SerchText($text, $data1, $data2, $symbol = 1) ; Ищет совпадени
 	EndIf
 EndFunc   ;==>SerchText
 #Region Из библиотек
-
-
-
-
-
-
-
-
-Остановился на том что надо продебажить это говно и сделать правильное отображение статистики
-
-
-
-
